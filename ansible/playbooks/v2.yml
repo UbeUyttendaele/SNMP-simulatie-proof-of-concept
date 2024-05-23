@@ -1,0 +1,27 @@
+- name: Checking if snmprec is renamed
+  stat:
+    path: /home/vagrant/data/v2/printer.snmprec
+  register: printer
+
+- name: Rename file
+  become_user: vagrant
+  shell: |
+    mv /home/vagrant/data/v2/printer.snmprec /home/vagrant/data/v2/{{ v2_community_string }}.snmprec
+  when: printer.stat.exists
+
+- name: Forward port 161 to 1611
+  ansible.builtin.iptables:
+    table: nat
+    chain: PREROUTING
+    in_interface: eth1
+    protocol: udp
+    match: udp
+    destination_port: 161
+    jump: REDIRECT
+    to_ports: 1611
+  become: yes
+
+- name: Starting snmpv3 simulator
+  become_user: vagrant
+  shell: |
+    snmpsim-command-responder --data-dir=/home/vagrant/data/v2 --agent-udpv4-endpoint=0.0.0.0:1611 --daemonize

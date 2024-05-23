@@ -1,0 +1,6 @@
+reinstall: false
+nms_server_address: "192.168.52.2"
+v1_server_address: 192.168.52.3
+v2_server_address: 192.168.52.4
+v3_server_address: 192.168.52.5
+keep_logs: True

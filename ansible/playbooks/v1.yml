@@ -1,0 +1,27 @@
+- name: Checking if snmprec is renamed
+  stat:
+    path: /home/vagrant/data/v1/synology.snmprec
+  register: synology
+
+- name: Rename file
+  become_user: vagrant
+  shell: |
+    mv /home/vagrant/data/v1/synology.snmprec /home/vagrant/data/v1/{{ v1_community_string }}.snmprec
+  when: synology.stat.exists
+
+- name: Forward port 161 to 1611
+  ansible.builtin.iptables:
+    table: nat
+    chain: PREROUTING
+    in_interface: eth1
+    protocol: udp
+    match: udp
+    destination_port: 161
+    jump: REDIRECT
+    to_ports: 1611
+  become: yes
+
+- name: Starting snmpv1 simulator
+  become_user: vagrant
+  shell: |
+    snmpsim-command-responder --data-dir=/home/vagrant/data/v1 --agent-udpv4-endpoint=0.0.0.0:1611 --daemonize

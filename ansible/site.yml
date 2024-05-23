@@ -1,0 +1,33 @@
+# site.yml
+---
+- hosts: agentv1
+  become: true
+  vars_files:
+    - vars/credentials.yml
+  tasks:
+    - import_tasks: playbooks/simulationdep.yml
+    - import_tasks: playbooks/v1.yml
+
+- hosts: agentv2
+  become: true
+  vars_files:
+    - vars/credentials.yml
+  tasks:
+    - import_tasks: playbooks/simulationdep.yml
+    - import_tasks: playbooks/v2.yml
+
+- hosts: agentv3
+  become: true
+  vars_files:
+    - vars/credentials.yml
+  tasks:
+    - import_tasks: playbooks/simulationdep.yml
+    - import_tasks: playbooks/v3.yml
+
+- hosts: manager
+  become: true
+  vars_files:
+    - vars/nms.yml
+    - vars/credentials.yml
+  tasks:
+    - import_tasks: playbooks/nms.yml

@@ -1,0 +1,44 @@
+- name: Installing net-snmp
+  package:
+    name: [net-snmp, net-snmp-utils]
+    state: present
+
+- name: Installing pip
+  package:
+    name: pip
+    state: present
+
+- name: Installing snmpsim
+  become_user: vagrant
+  pip:
+    name: snmpsim-lextudio
+    state: present
+
+- name: Removing existing mib directory
+  file:
+    path: /home/vagrant/data
+    state: absent
+
+- name: Ensuring mib directory exists
+  file:
+    path: /home/vagrant/data
+    state: directory
+    owner: vagrant
+    group: vagrant
+    mode: 0755
+
+- name: Moving mibs/txt files
+  copy:
+    src: mibs/
+    dest: /home/vagrant/data
+    owner: vagrant
+    group: vagrant
+    mode: 0644
+
+- name: Create var/run/snmpsim.commands.responder directory
+  file:
+    path: /var/run/snmpsim.commands.responder
+    state: directory
+    owner: vagrant
+    group: vagrant
+    mode: 0755

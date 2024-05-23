@@ -1,0 +1,31 @@
+---
+- name: agentv1
+  ip: 192.168.52.3
+  netmask: 255.255.255.0
+  memory: 512
+  box: "bento/rockylinux-9"
+
+- name: agentv2
+  ip: 192.168.52.4
+  netmask: 255.255.255.0
+  memory: 512
+  box: "bento/rockylinux-9"
+
+- name: agentv3
+  ip: 192.168.52.5
+  netmask: 255.255.255.0
+  memory: 512
+  box: "bento/rockylinux-9"
+
+- name: manager
+  ip: 192.168.52.2
+  netmask: 255.255.255.0
+  memory: 1024
+  box: "bento/rockylinux-9"
+# Optioneel
+
+- name: kali
+  ip: 192.168.52.6
+  netmask: 255.255.255.0
+  memory: 3584
+  box: "kalilinux/rolling"

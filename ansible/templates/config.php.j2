@@ -1,0 +1,51 @@
+<?php
+### Database config
+$config['db_host']    = 'localhost';
+$config['db_port']    = '3306';
+$config['db_user']    = 'librenms';
+$config['db_pass']    = '{{ librenms_db_password | mandatory }}';
+$config['db_name']    = 'librenms';
+$config['db_socket']  = '';
+
+### Basic librenms configuration
+$config['user']         = 'librenms';
+$config['install_dir']  = "/opt/librenms";
+
+### Update configuration
+$config['update_channel'] = 'release';  # uncomment to follow the monthly release channel
+
+### SNMP configuration
+$config['snmp']['community']            = array("{{ librenms_config_snmp_community }}");
+$config['snmp']['timeout'] = {{ librenms_config_snmp_timeout }};
+$config['snmp']['retries'] = {{ librenms_config_snmp_retries }};
+$config['snmp']['version']              = ['v3', 'v2c', 'v1'];
+$config['snmp']['v3'][1]['authlevel']   = "authPriv";
+$config['snmp']['v3'][1]['authname']    = "{{ librenms_config_snmp_authname | mandatory }}";
+$config['snmp']['v3'][1]['authpass']    = "{{ librenms_config_snmp_authpass | mandatory }}";
+$config['snmp']['v3'][1]['authalgo']    = "SHA";
+$config['snmp']['v3'][1]['cryptopass']  = "{{ librenms_config_snmp_cryptopass | mandatory }}";
+$config['snmp']['v3'][1]['cryptoalgo']  = "AES-128";
+
+### Ignore interfaces
+{% for librenms_config_bad_if_regexp in librenms_config_bad_if_regexps %}
+$config['bad_if_regexp'][] = '{{ librenms_config_bad_if_regexp }}';
+{% endfor %}
+
+### Auto Discovery configuration
+{% for librenms_config_net in librenms_config_nets %}
+# $config['nets'][] = "{{ librenms_config_net }}";
+{% endfor %}
+
+$config['auth_mechanism']                       = '{{ librenms_config_auth_mechanism }}';
+# Use SNMP instead of sysname
+$config['force_ip_to_sysname'] = true;
+
+$config['eventlog_purge']    = {{ librenms_config_eventlog_purge }};
+$config['syslog_purge']      = {{ librenms_config_syslog_purge }};
+$config['route_purge']       = {{ librenms_config_route_purge }};
+$config['alert_log_purge']   = {{ librenms_config_alert_log_purge }};
+$config['authlog_purge']     = {{ librenms_config_authlog_purge }};
+$config['ports_fdb_purge']   = {{ librenms_config_ports_fdb_purge }};
+$config['device_perf_purge'] = {{ librenms_config_device_perf_purge }};
+$config['rrd_purge']         = {{ librenms_config_rrd_purge }};
+$config['ports_purge']       = {{ librenms_config_ports_purge }};

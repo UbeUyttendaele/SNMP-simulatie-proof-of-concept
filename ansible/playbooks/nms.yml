@@ -1,0 +1,465 @@
+---
+- name: "Installing packages epel-release"
+  package:
+    name: [epel-release, dnf-utils]
+    state: latest
+
+- name: Importing remi repo key
+  rpm_key:
+    state: present
+    key: https://rpms.remirepo.net/enterprise/9/RPM-GPG-KEY-remi
+
+- name: Install Remi repo
+  yum:
+    name: https://rpms.remirepo.net/enterprise/remi-release-9.rpm
+    state: present
+
+- name: Enable DNF module
+  shell: |
+    dnf config-manager --set-enabled powertools
+    dnf module reset -y php
+    dnf module enable -y php:8.1
+
+- name: Installing dependecies
+  dnf:
+    name:
+      - bash-completion
+      - cronie
+      - fping
+      - git
+      #- ImageMagick
+      - mariadb-server
+      - mtr
+      - net-snmp
+      - net-snmp-utils
+      - nginx
+      - nmap
+      - php-fpm
+      - php-cli
+      - php-common
+      - php-curl
+      - php-gd
+      - php-gmp
+      - php-json
+      - php-mbstring
+      - php-process
+      - php-snmp
+      - php-xml
+      - php-zip
+      - php-mysqlnd
+      - python3
+      - python3-PyMySQL
+      - python3-redis
+      - python3-memcached
+      - python3-pip
+      - python3-systemd
+      - rrdtool
+      - unzip
+      - policycoreutils-python-utils
+      - cronie-noanacron
+      - vim
+    state: latest
+
+- name: Enabling cron
+  service:
+    name: crond
+    enabled: yes
+    state: restarted
+
+- name: Adding librenms user
+  user:
+    name: librenms
+    state: present
+
+- name: Check if librenms is present
+  stat:
+    path: /opt/librenms
+  register: librenmspresent
+
+- name: Delete existing files
+  file:
+    state: absent
+    path: /opt/librenms
+  when: reinstall is true and librenmspresent.stat.exists
+
+- name: Clone a repo with separate git directory
+  git:
+    repo: https://github.com/librenms/librenms.git
+    dest: /opt/librenms
+  when: reinstall is true or not librenmspresent.stat.exists
+
+- name: Changing file permissions
+  shell: |
+    chown -R librenms:librenms /opt/librenms
+    chmod 771 /opt/librenms
+    setfacl -d -m g::rwx /opt/librenms/rrd /opt/librenms/logs /opt/librenms/bootstrap/cache/ /opt/librenms/storage/
+    setfacl -R -m g::rwx /opt/librenms/rrd /opt/librenms/logs /opt/librenms/bootstrap/cache/ /opt/librenms/storage/
+
+- name: Execute install script
+  become_user: librenms
+  shell: |
+    /opt/librenms/scripts/composer_wrapper.php install --no-dev
+
+- name: Download composer
+  get_url:
+    url: https://getcomposer.org/composer-stable.phar
+    dest: /usr/bin/composer
+    mode: "0755"
+
+- name: Set timezone in php.ini to Europe/Brussels
+  lineinfile:
+    path: /etc/php.ini
+    regexp: '^;date\.timezone =$'
+    line: date.timezone = Europe/Brussels
+
+- name: Set timezone to Europe/Brussels
+  community.general.timezone:
+    name: Europe/Brussels
+
+- name: Configurting mariadb-server.cnf PART 1
+  lineinfile:
+    dest: /etc/my.cnf.d/mariadb-server.cnf
+    insertafter: "pid-file=/run/mariadb/mariadb.pid"
+    line: "innodb_file_per_table=1"
+
+- name: Configurting mariadb-server.cnf PART 2
+  lineinfile:
+    dest: /etc/my.cnf.d/mariadb-server.cnf
+    insertafter: "innodb_file_per_table=1"
+    line: "lower_case_table_names=0"
+
+- name: Enable mariadb
+  service:
+    name: mariadb
+    enabled: yes
+- name: Restart mariadb
+  service:
+    name: mariadb
+    state: restarted
+
+- name: Remove the test database
+  mysql_db:
+    name: test
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    login_unix_socket: /var/lib/mysql/mysql.sock
+    state: absent
+
+- name: Create user defined databases
+  mysql_db:
+    name: librenms
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    login_unix_socket: /var/lib/mysql/mysql.sock
+    state: present
+  register: db_creation
+
+- name: Remove anonymous database users
+  mysql_user:
+    name: ""
+    host_all: true
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    login_unix_socket: /var/lib/mysql/mysql.sock
+    state: absent
+  no_log: true
+
+- name: Create the database users
+  mysql_user:
+    name: "librenms"
+    password: "{{ librenms_db_password }}"
+    host: "localhost"
+    priv: "librenms.*:ALL"
+    append_privs: "no"
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    login_unix_socket: /var/lib/mysql/mysql.sock
+    state: present
+  no_log: true
+
+- name: Creating directory /etc/certs
+  file:
+    path: "/etc/certs"
+    state: directory
+
+- name: check if key exists
+  stat:
+    path: "/etc/certs/privkey.key"
+  register: key
+
+- name: check if CSR exists
+  stat:
+    path: "/etc/certs/request.csr"
+  register: csr
+
+- name: check if certificate exists
+  stat:
+    path: "/etc/certs/cert.crt"
+  register: cert
+
+- name: Generate private key.
+  openssl_privatekey:
+    path: "/etc/certs/privkey.key"
+  when: key.stat.exists == false
+
+- name: Generate CSR.
+  openssl_csr:
+    path: "/etc/certs/request.csr"
+    privatekey_path: "/etc/certs/privkey.key"
+  when: csr.stat.exists == false
+
+- name: Generate self signed certificate.
+  openssl_certificate:
+    path: "/etc/certs/cert.crt"
+    privatekey_path: "/etc/certs/privkey.key"
+    csr_path: "/etc/certs/request.csr"
+    provider: selfsigned
+  when: cert.stat.exists == false
+
+- name: Changing ownership, group and permissions for TLS files
+  ansible.builtin.file:
+    path: "/etc/certs/{{ item }}"
+    owner: root
+    group: librenms
+    mode: "0644"
+  loop:
+    - privkey.key
+    - cert.crt
+
+- name: Copy php www.conf file
+  copy:
+    src: /etc/php-fpm.d/www.conf
+    dest: /etc/php-fpm.d/librenms.conf
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: yes
+
+- name: Change [www] to [librenms] in php conf file
+  lineinfile:
+    path: /etc/php-fpm.d/librenms.conf
+    regexp: '^\[www\]$'
+    line: "[librenms]"
+
+- name: Changing group in php.ini
+  lineinfile:
+    path: /etc/php-fpm.d/librenms.conf
+    regexp: "^group = apache$"
+    line: group = librenms
+
+- name: Changing user in php.ini
+  lineinfile:
+    path: /etc/php-fpm.d/librenms.conf
+    regexp: "^user = apache$"
+    line: user = librenms
+
+- name: Changing socket in php.ini
+  lineinfile:
+    path: /etc/php-fpm.d/librenms.conf
+    regexp: '^listen = /run/php\-fpm/www\.sock$'
+    line: listen = /run/php-fpm-librenms.sock
+
+- name: Copy librenms.conf to remote host
+  template:
+    src: librenms.conf
+    dest: /etc/nginx/conf.d/librenms.conf
+
+- name: Check if config.php is present
+  ansible.builtin.stat:
+    path: /opt/librenms/config.php
+  register: __librenms_config
+
+- name: Copying config.php
+  copy:
+    src: config.php
+    dest: /opt/librenms/config.php
+    owner: librenms
+    group: librenms
+    mode: 0640
+
+- name: Setting web installer variables
+  shell: |
+    sed -i "s/#DB_HOST=/DB_HOST=localhost/g" /opt/librenms/.env
+    sed -i "s/#DB_DATABASE=/DB_DATABASE=librenms/g" /opt/librenms/.env
+    sed -i "s/#DB_USERNAME=/DB_USERNAME=librenms/g" /opt/librenms/.env
+    sed -i "s/#DB_PASSWORD=/DB_PASSWORD={{ librenms_db_password }}/g" /opt/librenms/.env
+
+- name: Enabling php-fpm
+  service:
+    name: php-fpm
+    enabled: yes
+
+- name: Enabling nginx
+  service:
+    name: nginx
+    enabled: yes
+
+- name: Restarting services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: restarted
+  with_items: [nginx, php-fpm]
+
+- name: Copying selinux modules
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ item }}"
+  with_items: [http_fping.tt, librenms.pp, librenms.te]
+
+- name: SELinux configuratie
+  shell: |
+    semanage fcontext -a -t httpd_sys_content_t '/opt/librenms/html(/.*)?'
+    semanage fcontext -a -t httpd_sys_rw_content_t '/opt/librenms/(rrd|storage)(/.*)?'
+    semanage fcontext -a -t httpd_log_t "/opt/librenms/logs(/.*)?"
+    semanage fcontext -a -t bin_t '/opt/librenms/librenms-service.py'
+    restorecon -RFvv /opt/librenms
+    setsebool -P httpd_can_sendmail=1
+    setsebool -P httpd_execmem 1
+    chcon -t httpd_sys_rw_content_t /opt/librenms/.env
+    checkmodule -M -m -o http_fping.mod http_fping.tt
+    semodule_package -o http_fping.pp -m http_fping.mod
+    semodule -i http_fping.pp
+    semodule -i librenms.pp
+
+- name: Enabling firewall
+  service:
+    name: firewalld
+    enabled: yes
+    state: started
+
+- name: Enabling firewall services
+  firewalld:
+    service: "{{ item }}"
+    permanent: true
+    state: enabled
+    immediate: true
+  with_items: [http, https]
+
+- name: Enabling lnms command completion
+  shell: |
+    ln -s /opt/librenms/lnms /usr/bin/lnms
+    cp /opt/librenms/misc/lnms-completion.bash /etc/bash_completion.d/
+
+- name: Moving snmp sample config
+  copy:
+    src: /opt/librenms/snmpd.conf.example
+    dest: /etc/snmp/snmpd.conf
+    remote_src: yes
+
+- name: Configuring snmp config file
+  lineinfile:
+    path: /etc/snmp/snmpd.conf
+    search_string: "RANDOMSTRINGGOESHERE"
+    line: "com2sec readonly  default         {{ community_string }}"
+
+- name: Getting agent from github
+  get_url:
+    url: https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/distro
+    dest: /usr/bin/distro
+    mode: "0755"
+
+- name: Enabling snmp
+  service:
+    name: snmpd
+    enabled: yes
+
+- name: Restarting snmpd
+  service:
+    name: snmpd
+    state: restarted
+
+- name: Setting cron job
+  copy:
+    src: cron
+    dest: /etc/cron.d/librenms
+
+- name: Setting scheduler
+  copy:
+    src: "{{ item }}"
+    dest: /etc/systemd/system/
+    remote_src: yes
+  with_items:
+    [
+      /opt/librenms/dist/librenms-scheduler.service,
+      /opt/librenms/dist/librenms-scheduler.timer,
+    ]
+
+- name: Enabling scheduler
+  service:
+    name: librenms-scheduler.timer
+    enabled: yes
+
+- name: Restarting scheduler
+  service:
+    name: librenms-scheduler.timer
+    state: restarted
+
+- name: Setting system variable in /etc/profile
+  lineinfile:
+    path: /etc/profile
+    line: "export SESSION_SECURE_COOKIE=true"
+
+- name: Setting secure cookies enabled
+  become_user: librenms
+  shell: |
+    lnms config:cache
+
+- name: Checking if cron file exist
+  stat:
+    path: /var/spool/cron/librenms
+  register: cronfile
+
+- name: Creating cron file
+  ansible.builtin.file:
+    path: /var/spool/cron/librenms
+    state: touch
+    owner: librenms
+    mode: u=rw
+  when: cronfile.stat.exists == false
+
+- name: Building database
+  become_user: librenms
+  shell: |
+    lnms migrate --force
+
+- name: Adding localhost to librenms
+  become_user: librenms
+  shell: |
+    lnms device:add localhost -c {{ community_string }}
+  ignore_errors: true
+- name: Adding target v1 to librenms
+  become_user: librenms
+  shell: |
+    lnms device:add 192.168.52.3 --v1 -r 161 -c {{ v1_community_string }}
+  ignore_errors: true
+- name: Adding target v2 to librenms
+  become_user: librenms
+  shell: |
+    lnms device:add 192.168.52.4 --v2c -r 161 -c {{ v2_community_string }}
+  ignore_errors: true
+
+- name: Adding target v3 to librenms
+  become_user: librenms
+  shell: |
+    lnms device:add 192.168.52.5 --v3 -r 161 -a {{ v3_credentials.auth_protocol }} -A {{ v3_credentials.auth_key }} -x {{ v3_credentials.priv_protocol }} -X {{ v3_credentials.priv_key }} -u {{ v3_credentials.username }}
+  ignore_errors: true
+
+- name: Setting cron on reboot
+  lineinfile:
+    dest: /var/spool/cron/librenms
+    line: "@reboot export SESSION_SECURE_COOKIE=true && lnms config:cache"
+    owner: librenms
+  when: cronfile.stat.exists == false
+
+- name: Enabling logrotate
+  copy:
+    src: /opt/librenms/misc/librenms.logrotate
+    dest: /etc/logrotate.d/librenms
+    remote_src: yes
+  when: keep_logs is true
+
+- name: Restarting nginx and php
+  service:
+    name: "{{ item }}"
+    state: restarted
+  with_items: [nginx, php-fpm]

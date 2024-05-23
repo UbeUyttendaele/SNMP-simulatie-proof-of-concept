@@ -1,0 +1,47 @@
+
+module librenms 1.0;
+
+require {
+	type usr_t;
+	type http_port_t;
+	type node_t;
+	type init_t;
+	type redis_port_t;
+	type gconf_home_t;
+	type httpd_log_t;
+	type httpd_tmp_t;
+	type httpd_t;
+	class capability sys_resource;
+	class rawip_socket { bind node_bind };
+	class tcp_socket name_connect;
+	class dir { read remove_name rmdir };
+	class file { create getattr ioctl map open read rename unlink write };
+}
+
+#============= httpd_t ==============
+
+#!!!! This avc can be allowed using the boolean 'httpd_read_user_content'
+allow httpd_t gconf_home_t:dir read;
+
+#!!!! This avc can be allowed using the boolean 'httpd_read_user_content'
+allow httpd_t gconf_home_t:file { getattr ioctl open read };
+
+#!!!! This avc can be allowed using one of the these booleans:
+#     httpd_can_network_connect, httpd_graceful_shutdown, httpd_can_network_relay, nis_enabled
+allow httpd_t http_port_t:tcp_socket name_connect;
+
+#!!!! This avc can be allowed using the boolean 'domain_can_mmap_files'
+allow httpd_t httpd_log_t:file map;
+allow httpd_t node_t:rawip_socket node_bind;
+
+#!!!! This avc can be allowed using the boolean 'httpd_can_network_connect'
+allow httpd_t redis_port_t:tcp_socket name_connect;
+
+#!!!! This avc can be allowed using one of the these booleans:
+#     httpd_run_stickshift, httpd_setrlimit
+allow httpd_t self:capability sys_resource;
+allow httpd_t self:rawip_socket bind;
+allow httpd_t usr_t:file { create rename unlink write };
+
+#============= init_t ==============
+allow init_t httpd_tmp_t:dir { remove_name rmdir };
